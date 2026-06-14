@@ -1,16 +1,9 @@
 # FR Legends Image to Livery Converter
 
-Tamamen client-side çalışan, GitHub Pages uyumlu bir FR Legends livery dönüştürücüsü.
+Tamamen client-side çalışan bir web sürümü ve ayrıca OpenCV tabanlı bir Python dönüştürücü içerir.
 
 ## Özellikler
 
-- PNG, JPG ve SVG yükleme
-- Canvas tabanlı analiz pipeline
-- Shape detection, renk çıkarımı ve FRL koordinat mapping
-- 1300 layer limitine göre optimizasyon
-- TXT export, clipboard copy ve download
-- Dark theme, mobile-first arayüz
-- PWA desteği için service worker
 
 ## Kullanım
 
@@ -21,4 +14,14 @@ Tamamen client-side çalışan, GitHub Pages uyumlu bir FR Legends livery dönü
 
 ## Not
 
-Bu proje tamamen tarayıcıda çalışır. Backend, API veya server-side processing yoktur.
+Web sürümü tamamen tarayıcıda çalışır. Python sürümü için `requirements.txt` içindeki bağımlılıkları kurup `frl_converter.py` dosyasını çalıştırabilirsiniz. Codespace ve headless ortamlar için OpenCV bağımlılığı `opencv-python-headless` olarak ayarlanmıştır.
+
+## Python Kullanımı
+
+```bash
+pip install -r requirements.txt
+python frl_converter.py input.png -o output.txt
+python -m unittest test_frl_converter.py
+```
+
+Çıktı formatı `SHAPE X Y W H R RGBA` şeklindedir ve tüm hexadecimal alanlar büyük harf, 4 haneli padding ve negatif koordinatlar için two's complement kuralına göre yazılır.
