@@ -45,6 +45,15 @@ class LayerSpec:
     depth: int
 
 
+@dataclass(frozen=True)
+class GroupBounds:
+    x: int
+    y: int
+    w: int
+    h: int
+    max_depth: int
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="FR Legends image to livery converter with strict hexadecimal output."
@@ -455,6 +464,42 @@ def enforce_limit(layers: List[LayerSpec], max_layers: int) -> List[LayerSpec]:
     return background + body[:keep_count]
 
 
+def compute_group_bounds(layers: Sequence[LayerSpec]) -> GroupBounds:
+    lefts = [layer.x - layer.w // 2 for layer in layers]
+    rights = [layer.x + layer.w // 2 for layer in layers]
+    tops = [layer.y - layer.h // 2 for layer in layers]
+    bottoms = [layer.y + layer.h // 2 for layer in layers]
+    left = min(lefts)
+    right = max(rights)
+    top = min(tops)
+    bottom = max(bottoms)
+    width = max(1, right - left)
+    height = max(1, bottom - top)
+    center_x = left + width // 2
+    center_y = top + height // 2
+    return GroupBounds(
+        x=center_x,
+        y=center_y,
+        w=width,
+        h=height,
+        max_depth=max(layer.depth for layer in layers),
+    )
+
+
+def build_group_header(layers: Sequence[LayerSpec]) -> str:
+    bounds = compute_group_bounds(layers)
+    trailer = "000D" if bounds.max_depth >= 2 else "0009" if bounds.max_depth >= 1 else "0001"
+    return (
+        "FFFF"
+        + signed_16bit_hex(bounds.x)
+        + signed_16bit_hex(bounds.y)
+        + unsigned_16bit_hex(bounds.w)
+        + unsigned_16bit_hex(bounds.h)
+        + "0000FFFFFFFF"
+        + trailer
+    )
+
+
 def format_layer(layer: LayerSpec) -> str:
     fields = [
         layer.shape_id.upper(),
@@ -466,6 +511,58 @@ def format_layer(layer: LayerSpec) -> str:
         layer.rgba.upper(),
     ]
     return " ".join(fields)
+
+
+def format_group_layer(layer: LayerSpec) -> str:
+    return format_layer(layer)
+
+
+def serialize_flat_output(layers: Sequence[LayerSpec]) -> str:
+    return "\n".join(format_layer(layer) for layer in layers) + "\n"
+
+
+def serialize_nested_output(layers: Sequence[LayerSpec]) -> str:
+    if not layers:
+        return ""
+
+    grouped: List[List[LayerSpec]] = []
+    current_group: List[LayerSpec] = []
+    for layer in layers:
+        if layer.depth == 0 and current_group:
+            grouped.append(current_group)
+            current_group = [layer]
+            continue
+        current_group.append(layer)
+    if current_group:
+        grouped.append(current_group)
+
+    lines: List[str] = []
+    for group in grouped:
+        lines.extend(serialize_group(group))
+    return "\n".join(lines) + "\n"
+
+
+def serialize_group(group: Sequence[LayerSpec]) -> List[str]:
+    lines = [build_group_header(group), "<"]
+    current_depth = 0
+
+    for layer in group:
+        while current_depth < layer.depth:
+            lines.append("    " * current_depth + "<")
+            current_depth += 1
+
+        while current_depth > layer.depth:
+            current_depth -= 1
+            lines.append("    " * current_depth + ">")
+
+        lines.append("    " * layer.depth + format_group_layer(layer))
+
+    while current_depth > 0:
+        current_depth -= 1
+        lines.append("    " * current_depth + ">")
+
+    lines.append(">")
+    return lines
 
 
 def create_background_layer(image: np.ndarray) -> LayerSpec:
@@ -530,14 +627,16 @@ def optimize_layers(layers: List[LayerSpec], max_layers: int, min_area: float, s
     optimized = remove_tiny_layers(layers, min_area)
     compression = 1.0 if simplify else 0.45
     optimized = merge_layers(optimized, compression)
-    optimized = sorted(optimized, key=lambda item: (item.depth, -item.area))
     optimized = enforce_limit(optimized, max_layers)
     return optimized
 
 
 def write_output(layers: Iterable[LayerSpec], output_path: Path) -> None:
-    lines = [format_layer(layer) for layer in layers]
-    output_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    output_path.write_text(serialize_nested_output(list(layers)), encoding="utf-8")
+
+
+def write_flat_output(layers: Iterable[LayerSpec], output_path: Path) -> None:
+    output_path.write_text(serialize_flat_output(list(layers)), encoding="utf-8")
 
 
 def main() -> int:

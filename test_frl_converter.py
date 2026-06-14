@@ -30,7 +30,7 @@ class FrlConverterTests(unittest.TestCase):
             loaded = fc.load_image(input_path)
             layers = fc.detect_layers(loaded, "balanced", 20.0)
             optimized = fc.optimize_layers(layers, 1300, 20.0, False)
-            fc.write_output(optimized, output_path)
+            fc.write_flat_output(optimized, output_path)
 
             lines = [line for line in output_path.read_text(encoding="utf-8").splitlines() if line]
 
@@ -52,6 +52,28 @@ class FrlConverterTests(unittest.TestCase):
             self.assertTrue(parts[4].upper() == parts[4])
             self.assertTrue(parts[5].upper() == parts[5])
             self.assertTrue(parts[6].upper() == parts[6])
+
+    def test_nested_export_contains_block_markers(self) -> None:
+        image = np.zeros((128, 128, 4), dtype=np.uint8)
+        image[:, :] = (0, 0, 0, 255)
+        cv2.rectangle(image, (16, 16), (111, 111), (255, 255, 255, 255), thickness=-1)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            input_path = Path(temp_dir) / "sample.png"
+            output_path = Path(temp_dir) / "nested.txt"
+            cv2.imwrite(str(input_path), image)
+
+            loaded = fc.load_image(input_path)
+            layers = fc.detect_layers(loaded, "high", 20.0)
+            optimized = fc.optimize_layers(layers, 1300, 20.0, False)
+            fc.write_output(optimized, output_path)
+
+            text = output_path.read_text(encoding="utf-8")
+
+        self.assertIn("FFFF", text)
+        self.assertIn("<", text)
+        self.assertIn(">", text)
+        self.assertTrue(any(len(line.split()) == 7 for line in text.splitlines() if line and not line.startswith(("FFFF", "<", ">"))))
 
 
 if __name__ == "__main__":
