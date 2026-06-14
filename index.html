@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0b0f14" />
+    <meta
+      name="description"
+      content="FR Legends Image to Livery Converter - tamamen client-side çalışan shape-to-livery aracı."
+    />
+    <title>FR Legends Image to Livery Converter</title>
+    <link rel="manifest" href="./manifest.json" />
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <div class="background-orb orb-a"></div>
+    <div class="background-orb orb-b"></div>
+
+    <main class="app-shell">
+      <section class="hero glass-panel">
+        <div>
+          <p class="eyebrow">Client-side FR Legends converter</p>
+          <h1>Image to Livery</h1>
+          <p class="hero-copy">
+            PNG, JPG veya SVG yükleyin. Sistem şekilleri çıkarır, renkleri analiz eder ve FRL
+            text formatında optimize edilmiş çıktı üretir.
+          </p>
+        </div>
+        <div class="hero-stats">
+          <div>
+            <span>Layers</span>
+            <strong id="layerCount">0</strong>
+          </div>
+          <div>
+            <span>Status</span>
+            <strong id="statusLabel">Idle</strong>
+          </div>
+          <div>
+            <span>Mode</span>
+            <strong id="modeLabel">Balanced</strong>
+          </div>
+        </div>
+      </section>
+
+      <section class="workspace-grid">
+        <article class="glass-panel upload-panel">
+          <div class="panel-header">
+            <h2>Input</h2>
+            <p>Drag & drop image upload</p>
+          </div>
+
+          <label id="dropZone" class="drop-zone" for="fileInput">
+            <input id="fileInput" type="file" accept="image/png,image/jpeg,image/svg+xml" />
+            <span class="drop-title">Drop image here</span>
+            <span class="drop-subtitle">or tap to browse</span>
+          </label>
+
+          <div class="control-grid">
+            <label>
+              <span>Performance mode</span>
+              <select id="performanceMode">
+                <option value="balanced" selected>Balanced</option>
+                <option value="low">Low memory</option>
+                <option value="high">High detail</option>
+              </select>
+            </label>
+
+            <label>
+              <span>Layer compression</span>
+              <input id="compressionLevel" type="range" min="0" max="100" value="35" />
+            </label>
+
+            <label>
+              <span>Min shape size</span>
+              <input id="minShapeSize" type="range" min="1" max="80" value="8" />
+            </label>
+
+            <label>
+              <span>Noise reduction</span>
+              <input id="noiseReduction" type="range" min="0" max="10" value="3" />
+            </label>
+          </div>
+
+          <div class="button-row">
+            <button id="convertBtn" class="primary">Convert</button>
+            <button id="copyBtn">Copy</button>
+            <button id="downloadBtn">Download TXT</button>
+            <button id="resetBtn" class="ghost">Reset</button>
+          </div>
+        </article>
+
+        <article class="glass-panel preview-panel">
+          <div class="panel-header">
+            <h2>Preview</h2>
+            <p>Canvas + overlay</p>
+          </div>
+          <div class="canvas-wrap">
+            <canvas id="previewCanvas" width="960" height="960"></canvas>
+          </div>
+        </article>
+      </section>
+
+      <section class="glass-panel output-panel">
+        <div class="panel-header output-header">
+          <div>
+            <h2>FRL Output</h2>
+            <p id="summaryLabel">Waiting for input</p>
+          </div>
+          <div class="output-actions">
+            <button id="undoOptimizationBtn" class="ghost">Undo Optimization</button>
+          </div>
+        </div>
+        <textarea
+          id="outputText"
+          spellcheck="false"
+          placeholder="Converted FR Legends livery text will appear here..."
+        ></textarea>
+      </section>
+    </main>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

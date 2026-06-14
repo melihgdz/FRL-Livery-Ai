@@ -1,0 +1,11 @@
+{
+  "name": "FR Legends Image to Livery Converter",
+  "short_name": "FRL Livery",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#070a0f",
+  "theme_color": "#0b0f14",
+  "description": "Client-side FR Legends image to livery converter.",
+  "icons": []
+}
