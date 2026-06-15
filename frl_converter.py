@@ -627,16 +627,16 @@ def build_group_header(layers: Sequence[LayerSpec]) -> str:
 
 
 def format_layer(layer: LayerSpec) -> str:
-    fields = [
-        layer.shape_id.upper(),
-        signed_16bit_hex(layer.x),
-        signed_16bit_hex(layer.y),
-        unsigned_16bit_hex(layer.w),
-        unsigned_16bit_hex(layer.h),
-        unsigned_16bit_hex(layer.r % 360),
-        layer.rgba.upper(),
-    ]
-    return " ".join(fields)
+    return (
+        layer.shape_id.upper()
+        + signed_16bit_hex(layer.x)
+        + signed_16bit_hex(layer.y)
+        + unsigned_16bit_hex(layer.w)
+        + unsigned_16bit_hex(layer.h)
+        + unsigned_16bit_hex(layer.r % 360)
+        + layer.rgba.upper()
+        + "0001"
+    )
 
 
 def format_group_layer(layer: LayerSpec) -> str:

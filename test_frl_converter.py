@@ -36,22 +36,10 @@ class FrlConverterTests(unittest.TestCase):
 
         self.assertGreaterEqual(len(lines), 1)
         for line in lines:
-            parts = line.split()
-            self.assertEqual(len(parts), 7)
-            self.assertEqual(len(parts[0]), 4)
-            self.assertEqual(len(parts[1]), 4)
-            self.assertEqual(len(parts[2]), 4)
-            self.assertEqual(len(parts[3]), 4)
-            self.assertEqual(len(parts[4]), 4)
-            self.assertEqual(len(parts[5]), 4)
-            self.assertEqual(len(parts[6]), 8)
-            self.assertTrue(parts[0].upper() == parts[0])
-            self.assertTrue(parts[1].upper() == parts[1])
-            self.assertTrue(parts[2].upper() == parts[2])
-            self.assertTrue(parts[3].upper() == parts[3])
-            self.assertTrue(parts[4].upper() == parts[4])
-            self.assertTrue(parts[5].upper() == parts[5])
-            self.assertTrue(parts[6].upper() == parts[6])
+            self.assertEqual(len(line), 36)
+            self.assertNotIn(" ", line)
+            self.assertTrue(line.upper() == line)
+            self.assertTrue(line.endswith("0001"))
 
     def test_nested_export_contains_block_markers(self) -> None:
         image = np.zeros((128, 128, 4), dtype=np.uint8)
@@ -73,7 +61,7 @@ class FrlConverterTests(unittest.TestCase):
         self.assertIn("FFFF", text)
         self.assertIn("<", text)
         self.assertIn(">", text)
-        self.assertTrue(any(len(line.split()) == 7 for line in text.splitlines() if line and not line.startswith(("FFFF", "<", ">"))))
+        self.assertTrue(any(len(line) == 36 for line in text.splitlines() if line and not line.startswith(("FFFF", "<", ">"))))
 
     def test_complex_polygon_is_geometrized_into_multiple_primitives(self) -> None:
         image = np.zeros((160, 160, 4), dtype=np.uint8)
@@ -110,6 +98,7 @@ class FrlConverterTests(unittest.TestCase):
 
         self.assertGreater(len(lines), 1)
         self.assertTrue(any(line.startswith(("0003", "0004")) for line in lines))
+        self.assertTrue(any(len(line) == 36 for line in lines if not line.startswith(("FFFF", "<", ">"))))
 
 
 if __name__ == "__main__":

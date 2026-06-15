@@ -3,15 +3,7 @@ export function exportFrlText(shapes) {
     return '';
   }
 
-  const header = buildGroupHeader(shapes);
-  const lines = [header, '<'];
-
-  shapes.forEach((shape) => {
-    lines.push(`  ${formatShapeLine(shape)}`);
-  });
-
-  lines.push('>');
-  return `${lines.join('\n')}\n`;
+  return `${serializeNestedOutput(shapes)}\n`;
 }
 
 export function createSummary(shapes) {
@@ -38,17 +30,64 @@ function formatNumber(value) {
 }
 
 function formatShapeLine(shape) {
-  const line = [
-    shape.id,
-    formatHexSigned(shape.frlX),
-    formatHexSigned(shape.frlY),
-    formatHexUnsigned(shape.frlWidth),
-    formatHexUnsigned(shape.frlHeight),
-    formatHexUnsigned(shape.frlRotation),
-    shape.rgba,
-  ];
+  return (
+    shape.id +
+    formatHexSigned(shape.frlX) +
+    formatHexSigned(shape.frlY) +
+    formatHexUnsigned(shape.frlWidth) +
+    formatHexUnsigned(shape.frlHeight) +
+    formatHexUnsigned(shape.frlRotation) +
+    shape.rgba +
+    '0001'
+  );
+}
 
-  return line.join(' ');
+function serializeNestedOutput(shapes) {
+  const grouped = [];
+  let currentGroup = [];
+
+  shapes.forEach((shape) => {
+    if (shape.depth === 0 && currentGroup.length > 0) {
+      grouped.push(currentGroup);
+      currentGroup = [shape];
+      return;
+    }
+
+    currentGroup.push(shape);
+  });
+
+  if (currentGroup.length > 0) {
+    grouped.push(currentGroup);
+  }
+
+  return grouped.map((group) => serializeGroup(group)).join('\n');
+}
+
+function serializeGroup(group) {
+  const lines = [buildGroupHeader(group), '<'];
+  let currentDepth = 0;
+
+  group.forEach((shape) => {
+    while (currentDepth < shape.depth) {
+      lines.push(`${'    '.repeat(currentDepth)}<`);
+      currentDepth += 1;
+    }
+
+    while (currentDepth > shape.depth) {
+      currentDepth -= 1;
+      lines.push(`${'    '.repeat(currentDepth)}>`);
+    }
+
+    lines.push(`${'    '.repeat(shape.depth)}${formatShapeLine(shape)}`);
+  });
+
+  while (currentDepth > 0) {
+    currentDepth -= 1;
+    lines.push(`${'    '.repeat(currentDepth)}>`);
+  }
+
+  lines.push('>');
+  return lines.join('\n');
 }
 
 function buildGroupHeader(shapes) {
@@ -82,7 +121,7 @@ function computeBounds(shapes) {
     centerY: Math.round(top + height / 2),
     width,
     height,
-    maxDepth: shapes.some((shape) => shape.depth > 0) ? 1 : 0,
+    maxDepth: Math.max(...shapes.map((shape) => shape.depth), 0),
   };
 }
 
