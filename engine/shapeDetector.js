@@ -21,15 +21,7 @@ export function detectShapes(imageData, options = {}) {
 
       const geometry = analyzeComponent(component.pixelIndices, width, height);
       const color = sampleForegroundColor(imageData, component.pixelIndices);
-      const type = classifyShape(geometry);
-
-      shapes.push({
-        id: SHAPE_IDS[type],
-        type,
-        rgba: rgbaToHexA(color),
-        color,
-        ...geometry,
-      });
+      shapes.push(...primitiveShapesFromGeometry(geometry, color));
     }
   }
 
@@ -115,26 +107,29 @@ function analyzeComponent(pixelIndices, width, height) {
     contour.push({ x, y });
   }
 
-  const bboxWidth = Math.max(1, maxX - minX + 1);
-  const bboxHeight = Math.max(1, maxY - minY + 1);
-  const centerX = totalX / pixelIndices.length;
-  const centerY = totalY / pixelIndices.length;
-  const fillRatio = pixelIndices.length / (bboxWidth * bboxHeight);
-  const contourPoints = simplifyPolygon(convexHull(contour));
-  const rotation = estimateRotation(contour);
+  return geometryFromPoints(contour, pixelIndices.length);
+}
+
+function geometryFromPoints(points, areaOverride = null) {
+  const bbox = boundsFromPoints(points);
+  const centerX = points.reduce((sum, point) => sum + point.x, 0) / Math.max(1, points.length);
+  const centerY = points.reduce((sum, point) => sum + point.y, 0) / Math.max(1, points.length);
+  const contourPoints = simplifyPolygon(convexHull(points));
+  const area = areaOverride ?? Math.abs(polygonArea(points));
+  const fillRatio = area / Math.max(1, bbox.width * bbox.height);
 
   return {
-    x: minX,
-    y: minY,
-    width: bboxWidth,
-    height: bboxHeight,
+    x: bbox.x,
+    y: bbox.y,
+    width: bbox.width,
+    height: bbox.height,
     centerX,
     centerY,
-    area: pixelIndices.length,
+    area,
     fillRatio,
     contour: contourPoints,
-    perimeter: estimatePerimeter(contour),
-    rotation,
+    perimeter: estimatePerimeter(points),
+    rotation: estimateRotation(points),
   };
 }
 
@@ -168,6 +163,51 @@ function classifyShape(geometry) {
   return circularity > 0.5 ? 'circle' : 'rectangle';
 }
 
+function primitiveShapesFromGeometry(geometry, color) {
+  const type = classifyShape(geometry);
+  const rgba = rgbaToHexA(color);
+  const simpleTypes = new Set(['triangle', 'right_triangle', 'line', 'parallelogram']);
+  const circleLikeTypes = new Set(['circle', 'ellipse']);
+
+  if (simpleTypes.has(type) || circleLikeTypes.has(type)) {
+    return [buildShape(geometry, type, rgba, color)];
+  }
+
+  if (geometry.contour.length <= 4) {
+    return [buildShape(geometry, type, rgba, color)];
+  }
+
+  const points = geometry.contour;
+  if (points.length < 3) {
+    return [buildShape(geometry, 'rectangle', rgba, color)];
+  }
+
+  const centroid = {
+    x: points.reduce((sum, point) => sum + point.x, 0) / points.length,
+    y: points.reduce((sum, point) => sum + point.y, 0) / points.length,
+  };
+
+  const shapes = [];
+  for (let index = 0; index < points.length; index += 1) {
+    const trianglePoints = [centroid, points[index], points[(index + 1) % points.length]];
+    const triangleGeometry = geometryFromPoints(trianglePoints);
+    const triangleType = isRightTriangle(trianglePoints) ? 'right_triangle' : 'triangle';
+    shapes.push(buildShape(triangleGeometry, triangleType, rgba, color));
+  }
+
+  return shapes.length > 0 ? shapes : [buildShape(geometry, type, rgba, color)];
+}
+
+function buildShape(geometry, type, rgba, color) {
+  return {
+    id: SHAPE_IDS[type] ?? SHAPE_IDS.rectangle,
+    type,
+    rgba,
+    color,
+    ...geometry,
+  };
+}
+
 function estimatePerimeter(points) {
   if (points.length < 2) {
     return 1;
@@ -181,6 +221,60 @@ function estimatePerimeter(points) {
   }
 
   return perimeter;
+}
+
+function polygonArea(points) {
+  if (points.length < 3) {
+    return 0;
+  }
+
+  let sum = 0;
+  for (let index = 0; index < points.length; index += 1) {
+    const current = points[index];
+    const next = points[(index + 1) % points.length];
+    sum += current.x * next.y - next.x * current.y;
+  }
+
+  return sum / 2;
+}
+
+function boundsFromPoints(points) {
+  const xs = points.map((point) => point.x);
+  const ys = points.map((point) => point.y);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+
+  return {
+    x: minX,
+    y: minY,
+    width: Math.max(1, maxX - minX + 1),
+    height: Math.max(1, maxY - minY + 1),
+  };
+}
+
+function isRightTriangle(points) {
+  if (points.length !== 3) {
+    return false;
+  }
+
+  const vectors = [
+    { x: points[1].x - points[0].x, y: points[1].y - points[0].y },
+    { x: points[2].x - points[1].x, y: points[2].y - points[1].y },
+    { x: points[0].x - points[2].x, y: points[0].y - points[2].y },
+  ];
+
+  return vectors.some((vectorA, index) => {
+    const vectorB = vectors[(index + 1) % 3];
+    const denom = Math.hypot(vectorA.x, vectorA.y) * Math.hypot(vectorB.x, vectorB.y);
+    if (denom === 0) {
+      return false;
+    }
+
+    const cosine = Math.abs(((vectorA.x * vectorB.x) + (vectorA.y * vectorB.y)) / denom);
+    return cosine < 0.18;
+  });
 }
 
 function estimateRotation(points) {

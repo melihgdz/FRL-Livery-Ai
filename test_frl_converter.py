@@ -75,6 +75,42 @@ class FrlConverterTests(unittest.TestCase):
         self.assertIn(">", text)
         self.assertTrue(any(len(line.split()) == 7 for line in text.splitlines() if line and not line.startswith(("FFFF", "<", ">"))))
 
+    def test_complex_polygon_is_geometrized_into_multiple_primitives(self) -> None:
+        image = np.zeros((160, 160, 4), dtype=np.uint8)
+        image[:, :] = (0, 0, 0, 255)
+        points = np.array(
+            [
+                [80, 18],
+                [97, 54],
+                [136, 58],
+                [106, 83],
+                [114, 123],
+                [80, 102],
+                [46, 123],
+                [54, 83],
+                [24, 58],
+                [63, 54],
+            ],
+            dtype=np.int32,
+        )
+        cv2.fillPoly(image, [points], (0, 255, 0, 255))
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            input_path = Path(temp_dir) / "complex.png"
+            output_path = Path(temp_dir) / "complex-out.txt"
+            cv2.imwrite(str(input_path), image)
+
+            loaded = fc.load_image(input_path)
+            layers = fc.detect_layers(loaded, "high", 10.0)
+            optimized = fc.optimize_layers(layers, 1300, 10.0, True)
+            fc.write_flat_output(optimized, output_path)
+
+            text = output_path.read_text(encoding="utf-8")
+            lines = [line for line in text.splitlines() if line]
+
+        self.assertGreater(len(lines), 1)
+        self.assertTrue(any(line.startswith(("0003", "0004")) for line in lines))
+
 
 if __name__ == "__main__":
     unittest.main()

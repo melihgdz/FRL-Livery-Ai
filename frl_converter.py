@@ -291,7 +291,7 @@ def opposite_side_parallelism(points: np.ndarray) -> int:
     return matches
 
 
-def contour_to_layer(
+def contour_to_layers(
     contour: np.ndarray,
     contour_index: int,
     contours: Sequence[np.ndarray],
@@ -312,72 +312,198 @@ def contour_to_layer(
     epsilon_ratio = 0.01 if detail == "high" else 0.02 if detail == "balanced" else 0.03
     approx = cv2.approxPolyDP(contour, epsilon_ratio * perimeter, True)
     rect = cv2.minAreaRect(contour)
-    box = cv2.boxPoints(rect)
-    box = np.int32(box)
     x, y, w, h = cv2.boundingRect(contour)
 
     mask = np.zeros(image_shape, dtype=np.uint8)
     cv2.drawContours(mask, [contour], -1, 255, thickness=cv2.FILLED)
     color = mean_color_from_mask(image, mask)
-    shape_name = classify_shape(contour, approx, hierarchy_entry)
-    shape_id = SHAPE_LIBRARY.get(shape_name, SHAPE_LIBRARY["rectangle"])
     depth = 0 if hierarchy_entry[3] == -1 else 1
     center_x, center_y = rect[0]
     half_w = image_shape[1] / 2.0
     half_h = image_shape[0] / 2.0
 
-    mapped_x = map_to_frl(center_x - half_w, half_w)
-    mapped_y = map_to_frl(half_h - center_y, half_h)
-    mapped_w = clamp_int((w / max(1, image_shape[1])) * 1000.0, 1, 1000)
-    mapped_h = clamp_int((h / max(1, image_shape[0])) * 1000.0, 1, 1000)
-    rotation = compute_rotation(rect)
-
-    layers.append(
-        LayerSpec(
-            shape_id=shape_id,
-            x=mapped_x,
-            y=mapped_y,
-            w=mapped_w,
-            h=mapped_h,
-            r=rotation,
-            rgba=rgba_to_hex8((color[2], color[1], color[0], 255)),
-            area=area,
+    shape_name = classify_shape(contour, approx, hierarchy_entry)
+    rgba_hex = rgba_to_hex8((color[2], color[1], color[0], 255))
+    layers.extend(
+        primitive_layers_from_contour(
+            contour=contour,
+            approx=approx,
+            shape_name=shape_name,
+            rgba_hex=rgba_hex,
             depth=depth,
+            image_shape=image_shape,
         )
     )
 
     child_index = hierarchy_entry[2]
     while child_index != -1:
         child_contour = contours[child_index]
-        hole_area = cv2.contourArea(child_contour)
-        hole_rect = cv2.minAreaRect(child_contour)
-        hole_x, hole_y, hole_w, hole_h = cv2.boundingRect(child_contour)
         hole_perimeter = cv2.arcLength(child_contour, True)
         hole_epsilon_ratio = 0.01 if detail == "high" else 0.02 if detail == "balanced" else 0.03
+        hole_area = cv2.contourArea(child_contour)
+        hole_rect = cv2.minAreaRect(child_contour)
         hole_shape = classify_shape(
             child_contour,
             cv2.approxPolyDP(child_contour, hole_epsilon_ratio * hole_perimeter, True),
             hierarchy[child_index],
         )
-        hole_shape_id = SHAPE_LIBRARY.get(hole_shape, SHAPE_LIBRARY["rectangle"])
-        hole_color = background_rgba
-        hole_center_x, hole_center_y = hole_rect[0]
-        layers.append(
-            LayerSpec(
-                shape_id=hole_shape_id,
-                x=map_to_frl(hole_center_x - half_w, half_w),
-                y=map_to_frl(half_h - hole_center_y, half_h),
-                w=clamp_int((hole_w / max(1, image_shape[1])) * 1000.0, 1, 1000),
-                h=clamp_int((hole_h / max(1, image_shape[0])) * 1000.0, 1, 1000),
-                r=compute_rotation(hole_rect),
-                rgba=rgba_to_hex8((hole_color[2], hole_color[1], hole_color[0], 255)),
-                area=hole_area,
+        hole_color_hex = rgba_to_hex8((background_rgba[2], background_rgba[1], background_rgba[0], 255))
+        hole_approx = cv2.approxPolyDP(child_contour, hole_epsilon_ratio * hole_perimeter, True)
+        layers.extend(
+            primitive_layers_from_contour(
+                contour=child_contour,
+                approx=hole_approx,
+                shape_name=hole_shape,
+                rgba_hex=hole_color_hex,
                 depth=depth + 1,
+                image_shape=image_shape,
             )
         )
         child_index = hierarchy[child_index][0]
 
     return layers
+
+
+def primitive_layers_from_contour(
+    contour: np.ndarray,
+    approx: np.ndarray,
+    shape_name: str,
+    rgba_hex: str,
+    depth: int,
+    image_shape: Tuple[int, int],
+) -> List[LayerSpec]:
+    require_cv2()
+    area = abs(cv2.contourArea(contour))
+    if area <= 0:
+        return []
+
+    rect = cv2.minAreaRect(contour)
+    x, y, w, h = cv2.boundingRect(contour)
+    center_x, center_y = rect[0]
+    half_w = image_shape[1] / 2.0
+    half_h = image_shape[0] / 2.0
+    mapped_x = map_to_frl(center_x - half_w, half_w)
+    mapped_y = map_to_frl(half_h - center_y, half_h)
+    mapped_w = clamp_int((w / max(1, image_shape[1])) * 1000.0, 1, 1000)
+    mapped_h = clamp_int((h / max(1, image_shape[0])) * 1000.0, 1, 1000)
+    rotation = compute_rotation(rect)
+
+    simple_shapes = {
+        "rectangle",
+        "circle",
+        "triangle",
+        "right_triangle",
+        "line",
+        "ellipse",
+        "semicircle",
+        "quarter_circle",
+        "parallelogram",
+    }
+
+    circle_like_shapes = {"circle", "ellipse", "semicircle", "quarter_circle", "ring_thin", "ring_medium"}
+    if shape_name in circle_like_shapes or shape_name in {"triangle", "right_triangle", "line", "parallelogram"}:
+        return [
+            LayerSpec(
+                shape_id=SHAPE_LIBRARY.get(shape_name, SHAPE_LIBRARY["rectangle"]),
+                x=mapped_x,
+                y=mapped_y,
+                w=mapped_w,
+                h=mapped_h,
+                r=rotation,
+                rgba=rgba_hex,
+                area=area,
+                depth=depth,
+            )
+        ]
+
+    if len(approx) <= 4 and shape_name in simple_shapes:
+        return [
+            LayerSpec(
+                shape_id=SHAPE_LIBRARY.get(shape_name, SHAPE_LIBRARY["rectangle"]),
+                x=mapped_x,
+                y=mapped_y,
+                w=mapped_w,
+                h=mapped_h,
+                r=rotation,
+                rgba=rgba_hex,
+                area=area,
+                depth=depth,
+            )
+        ]
+
+    points = approx[:, 0, :].astype(np.float32)
+    if len(points) < 3:
+        return [
+            LayerSpec(
+                shape_id=SHAPE_LIBRARY.get("rectangle", "0001"),
+                x=mapped_x,
+                y=mapped_y,
+                w=mapped_w,
+                h=mapped_h,
+                r=rotation,
+                rgba=rgba_hex,
+                area=area,
+                depth=depth,
+            )
+        ]
+
+    centroid = points.mean(axis=0)
+    layers: List[LayerSpec] = []
+    for index in range(len(points)):
+        triangle = np.array(
+            [centroid, points[index], points[(index + 1) % len(points)]],
+            dtype=np.float32,
+        ).reshape(-1, 1, 2)
+        triangle_area = abs(cv2.contourArea(triangle))
+        if triangle_area < 1.0:
+            continue
+        triangle_rect = cv2.minAreaRect(triangle)
+        triangle_rotation = compute_rotation(triangle_rect)
+        triangle_x, triangle_y, triangle_w, triangle_h = cv2.boundingRect(triangle)
+        triangle_center_x, triangle_center_y = triangle_rect[0]
+        triangle_shape = "right_triangle" if is_right_triangle(triangle) else "triangle"
+        layers.append(
+            LayerSpec(
+                shape_id=SHAPE_LIBRARY[triangle_shape],
+                x=map_to_frl(triangle_center_x - half_w, half_w),
+                y=map_to_frl(half_h - triangle_center_y, half_h),
+                w=clamp_int((triangle_w / max(1, image_shape[1])) * 1000.0, 1, 1000),
+                h=clamp_int((triangle_h / max(1, image_shape[0])) * 1000.0, 1, 1000),
+                r=triangle_rotation,
+                rgba=rgba_hex,
+                area=triangle_area,
+                depth=depth,
+            )
+        )
+
+    return layers or [
+        LayerSpec(
+            shape_id=SHAPE_LIBRARY.get("rectangle", "0001"),
+            x=mapped_x,
+            y=mapped_y,
+            w=mapped_w,
+            h=mapped_h,
+            r=rotation,
+            rgba=rgba_hex,
+            area=area,
+            depth=depth,
+        )
+    ]
+
+
+def is_right_triangle(triangle: np.ndarray) -> bool:
+    points = triangle[:, 0, :].astype(np.float32)
+    vectors = [points[(index + 1) % 3] - points[index] for index in range(3)]
+    for index in range(3):
+        vector_a = vectors[index]
+        vector_b = vectors[(index + 1) % 3]
+        denom = np.linalg.norm(vector_a) * np.linalg.norm(vector_b)
+        if denom == 0:
+            continue
+        cosine = abs(float(np.dot(vector_a, vector_b) / denom))
+        if cosine < 0.18:
+            return True
+    return False
 
 
 def remove_tiny_layers(layers: List[LayerSpec], min_area: float) -> List[LayerSpec]:
@@ -607,7 +733,7 @@ def detect_layers(image: np.ndarray, detail: str, min_area: float) -> List[Layer
         if entry[3] != -1 and cv2.contourArea(contour) < min_area * 0.5:
             continue
         layers.extend(
-            contour_to_layer(
+            contour_to_layers(
                 contour=contour,
                 contour_index=index,
                 contours=contours,
